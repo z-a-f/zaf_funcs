@@ -130,6 +130,21 @@ class _TinyImageNetPaths(object):
           self.paths['train'].append((fname, label_id, nid, bbox))
 
 
+r"""Data structure to hold the data paths to the images.
+Only used if the images are loaded manually, and not from the pickle.
+
+TODO(z-a-f): Make sure this is not pickled.
+
+Args:
+  root_dir: Where the data is located
+  download: Download if the data is not there
+
+Members:
+  label_id:
+  ids:
+  nit_to_words:
+  data_dict:
+"""
 class TinyImageNetPaths(object):
   instance = None
   def __new__(cls, *args, **kwargs):
@@ -142,8 +157,8 @@ class TinyImageNetPaths(object):
     return setattr(self.instance, name, value)
 
 
+r"""Basic data loader."""
 class _Loader:
-  """Basic data loader."""
   def __init__(self, tin_dataset, batch_size):
     self.tin = tin_dataset
     if not self.tin.preload:
@@ -253,20 +268,27 @@ class TinyImageNetDataset(Dataset):
       sample = self.transform(sample)
     return self.final_transform(sample)
 
+  r"""Returns an instance of the data loader class that loads batches."""
   def batch_loader(self, batch_size):
     return _Loader(self, batch_size)
 
+  r"""Sets the dataset to the eval mode -- no transformation will be done."""
   def eval(self):
     self._train = False
+
+  r"""Sets the dataset to the train mode -- all transformations will be done."""
   def train(self):
     if self.mode == 'test':
       raise RuntimeError("Cannot train on test data")
     self._train = True
 
+  r"""Sets the data to CUDA mode."""
   def cuda(self):
     self.img_data = self.img_data.cuda()
     self.label_data = self.label_data.cuda()
     return self
+
+  r"""Sets the data to CPU mode."""
   def cpu(self):
     self.img_data = self.img_data.cpu()
     self.label_data = self.label_data.cpu()
