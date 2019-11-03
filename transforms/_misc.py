@@ -53,6 +53,9 @@ class Transformation:
   def __iter__(self):
     for t in self.ts:
       yield t
+  def __getitem__(self, idx):
+    return self.ts[idx]
+
 
 class ToTensor:
   def __init__(self, device='cpu', deepcopy=True):
