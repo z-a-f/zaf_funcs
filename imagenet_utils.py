@@ -245,7 +245,7 @@ def main_worker(gpu, ngpus_per_node, args):
         train(train_loader, model, criterion, optimizer, epoch, args)
 
         # evaluate on validation set
-        acc1 = validate(val_loader, model, criterion, args)
+        acc1, _, _ = validate(val_loader, model, criterion, args)
 
         # remember best acc@1 and save checkpoint
         is_best = acc1 > best_acc1
@@ -262,12 +262,12 @@ def main_worker(gpu, ngpus_per_node, args):
             }, is_best)
 
 
-def train(train_loader, model, criterion, optimizer, epoch, args):
+def train(train_loader, model, criterion, optimizer, epoch, args, cuda=False):
     batch_time = AverageMeter('Time', ':6.3f')
     data_time = AverageMeter('Data', ':6.3f')
     losses = AverageMeter('Loss', ':.4e')
-    top1 = AverageMeter('Acc@1', ':6.2f')
-    top5 = AverageMeter('Acc@5', ':6.2f')
+    top1 = AverageMeter('Acc@1', ':6.2%')
+    top5 = AverageMeter('Acc@5', ':6.2%')
     progress = ProgressMeter(
         len(train_loader),
         [batch_time, data_time, losses, top1, top5],
@@ -281,9 +281,9 @@ def train(train_loader, model, criterion, optimizer, epoch, args):
         # measure data loading time
         data_time.update(time.time() - end)
 
-        if args.gpu is not None:
+        if cuda:
             images = images.cuda(args.gpu, non_blocking=True)
-        target = target.cuda(args.gpu, non_blocking=True)
+            target = target.cuda(args.gpu, non_blocking=True)
 
         # compute output
         output = model(images)
@@ -309,13 +309,14 @@ def train(train_loader, model, criterion, optimizer, epoch, args):
                 progress.display(i)
         elif i > 0 and i % args.print_freq == 0:
             progress.display(i)
+    return top1.avg, top5.avg, losses.avg
 
 
 def validate(val_loader, model, criterion, args, cuda=True):
     batch_time = AverageMeter('Time', ':6.3f')
     losses = AverageMeter('Loss', ':.4e')
-    top1 = AverageMeter('Acc@1', ':6.2f')
-    top5 = AverageMeter('Acc@5', ':6.2f')
+    top1 = AverageMeter('Acc@1', ':6.2%')
+    top5 = AverageMeter('Acc@5', ':6.2%')
     progress = ProgressMeter(
         len(val_loader),
         [batch_time, losses, top1, top5],
@@ -328,8 +329,7 @@ def validate(val_loader, model, criterion, args, cuda=True):
         end = time.time()
         for i, (images, target) in enumerate(val_loader):
             if cuda:
-                if args.gpu is not None:
-                    images = images.cuda(args.gpu, non_blocking=True)
+                images = images.cuda(args.gpu, non_blocking=True)
                 target = target.cuda(args.gpu, non_blocking=True)
 
             # compute output
@@ -357,13 +357,14 @@ def validate(val_loader, model, criterion, args, cuda=True):
         # print('\t* Acc@1 {top1.avg:.3f} Acc@5 {top5.avg:.3f}'
         #       .format(top1=top1, top5=top5))
 
-    return top1.avg
+    return top1.avg, top5.avg, losses.avg
 
 
-def save_checkpoint(state, is_best, filename='checkpoint.pth.tar'):
+def save_checkpoint(state, is_best, filename='checkpoint.pth.tar',
+                    best_filename='model_best.pth.tar'):
     torch.save(state, filename)
     if is_best:
-        shutil.copyfile(filename, 'model_best.pth.tar')
+        shutil.copyfile(filename, best_filename)
 
 
 def load_checkpoint(model, optimizer, args, filename='checkpoint.pth.tar'):
@@ -429,14 +430,20 @@ class ProgressMeter(object):
         fmt = '{:' + str(num_digits) + 'd}'
         return '[' + fmt + '/' + fmt.format(num_batches) + ']'
 
-def adjust_learning_rate(optimizer, epoch, args, epochs=30, factor=0.1):
+def adjust_learning_rate(optimizer, epoch, args, epochs=30, factor=0.1,
+                         mode=None):
     """Sets the learning rate to the initial LR decayed by 10 every 30 epochs"""
-    # lr = args.lr * (factor ** (epoch // epochs))
-    divisor = (epoch // epochs + 1)
-    lr = args.lr / divisor * factor
+    if mode is None:
+        mode = 'exp'
+    assert(mode in ['exp', 'div'])
+    if mode == 'exp':
+        lr = args.lr * (factor ** (epoch // epochs + 1))
+    elif mode == 'div':
+        divisor = (epoch // epochs + 1)
+        lr = args.lr / divisor * factor
     for param_group in optimizer.param_groups:
         param_group['lr'] = lr
-
+    return lr, (epoch // epochs) != ((epoch-1) // epochs)  # True if changed
 
 def accuracy(output, target, topk=(1,)):
     """Computes the accuracy over the k top predictions for the specified values of k"""
